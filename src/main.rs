@@ -131,8 +131,9 @@ fn main() {
             } else {
                 add_client(false);
                 tasks.push(Task::new(&topic, &response_topic, &payload));
-
+                // TODO: send task to a worker
             }
+            // TODO: handle worker response
 
             print_debug(&clients, &topics, &tasks);
         }
