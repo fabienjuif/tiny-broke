@@ -78,7 +78,7 @@ fn main() {
     let socket = context.socket(SocketType::ROUTER).unwrap();
     socket.bind("tcp://127.0.0.1:3000").unwrap();
 
-    let mut message = zmq::Message::new().unwrap();
+    let mut message = zmq::Message::new();
 
     let mut index = 0;
     let mut identity = String::from("");
@@ -121,6 +121,38 @@ fn main() {
             }
         };
 
+        let get_next_worker_name = |topic_name: &str, topics: &HashMap<String, Topic>, clients: &HashMap<String, Client>| {
+            // TODO: round robin
+            let topic = topics.get(topic_name).unwrap();
+            let worker = clients.get(topic.workers.get(0).unwrap()).unwrap();
+
+            worker.name.clone()
+        };
+
+        let send_task = |mut task: Task, topics: &HashMap<String, Topic>, clients: &HashMap<String, Client>| {
+            task.date = SystemTime::now();
+            task.retry += 1;
+
+            if task.retry >= 3 { // TODO: make it a const
+                panic!("Max retry!");
+            }
+
+            // select a worker
+            let worker_name = get_next_worker_name(&task.worker_topic, topics, clients);
+            task.worker_name = Some(worker_name.clone());
+
+            // send the task to the worker
+            // if it doesn't works (worker is dead for instance), then we retry
+            // the recursion is done if there is no worker anymore or if the retry is to damn high
+            dbg!(&task);
+            // socket.send_multipart(&vec![worker_name.as_bytes(), task.payload.as_bytes()], zmq::DONTWAIT);
+            socket.send(&worker_name, zmq::SNDMORE & zmq::DONTWAIT).unwrap();
+            socket.send("", zmq::SNDMORE & zmq::DONTWAIT).unwrap(); // TODO: this could be removed!
+            socket.send(&task.payload, zmq::DONTWAIT).unwrap();
+            // TODO: const sent = send(sock, [worker.name, '', task.payload])
+            // TODO: if (!sent) return sendTask(sock, task)
+        };
+
         if message.get_more() {
             index += 1;
         } else {
@@ -130,8 +162,9 @@ fn main() {
                 add_client(true);
             } else {
                 add_client(false);
-                tasks.push(Task::new(&topic, &response_topic, &payload));
-                // TODO: send task to a worker
+                let task = Task::new(&topic, &response_topic, &payload);
+                send_task(task, &topics, &clients);
+                // TODO: add task to vec
             }
             // TODO: handle worker response
 

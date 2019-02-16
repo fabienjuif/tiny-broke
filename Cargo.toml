@@ -5,4 +5,4 @@ authors = ["Fabien JUIF <fabien.juif@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-zmq = "0.8"
+zmq = "0.9"
