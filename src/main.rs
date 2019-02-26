@@ -146,9 +146,9 @@ fn main() {
             // the recursion is done if there is no worker anymore or if the retry is to damn high
             dbg!(&task);
             // socket.send_multipart(&vec![worker_name.as_bytes(), task.payload.as_bytes()], zmq::DONTWAIT);
-            socket.send(&worker_name, zmq::SNDMORE & zmq::DONTWAIT).unwrap();
-            socket.send("", zmq::SNDMORE & zmq::DONTWAIT).unwrap(); // TODO: this could be removed!
-            socket.send(&task.payload, zmq::DONTWAIT).unwrap();
+            socket.send(&worker_name, zmq::SNDMORE | zmq::DONTWAIT).expect("send should work 1");
+            socket.send("", zmq::SNDMORE | zmq::DONTWAIT).expect("send should work 2"); // TODO: this could be removed!
+            socket.send(&task.payload, zmq::DONTWAIT).expect("send should work 3");
             // TODO: const sent = send(sock, [worker.name, '', task.payload])
             // TODO: if (!sent) return sendTask(sock, task)
         };

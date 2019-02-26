@@ -6,3 +6,4 @@ edition = "2018"
 
 [dependencies]
 zmq = "0.9"
+# zmq = { path = "../rust-zmq" }
