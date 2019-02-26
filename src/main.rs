@@ -78,6 +78,9 @@ fn main() {
     let socket = context.socket(SocketType::ROUTER).unwrap();
     socket.bind("tcp://127.0.0.1:3000").unwrap();
 
+    // this to have error if a worker can't be reached
+    socket.set_router_mandatory(true).unwrap();
+
     let mut message = zmq::Message::new();
 
     let mut index = 0;
