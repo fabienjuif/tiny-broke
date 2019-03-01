@@ -47,6 +47,7 @@ struct Task {
     retry: u8,
     payload: String,
     date: SystemTime,
+    sent: bool,
 }
 
 impl Task {
@@ -58,6 +59,7 @@ impl Task {
             retry: 0,
             payload: payload.to_string(),
             date: SystemTime::now(),
+            sent: false,
         }
     }
 }
@@ -124,9 +126,24 @@ fn main() {
             }
         };
 
+        // let mut remove_worker = |worker_name: &str| {
+        //     let worker = clients.get(worker_name).unwrap();
+        //     worker.topics.iter()
+        //         .for_each(|topic| {
+        //             topics
+        //                 .entry(worker_name.to_string())
+        //                 .and_modify(|topic| {
+        //                     let position = topic.workers.iter().position(|name| name == worker_name);
+        //                     topic.workers.remove(position.unwrap());
+        //                 });
+        //         });
+        //     clients.remove(worker_name);
+        // };
+
         let get_next_worker_name = |topic_name: &str, topics: &HashMap<String, Topic>, clients: &HashMap<String, Client>| {
             // TODO: round robin
             let topic = topics.get(topic_name).unwrap();
+            dbg!(&topic.workers);
             let worker = clients.get(topic.workers.get(0).unwrap()).unwrap();
 
             worker.name.clone()
@@ -147,13 +164,12 @@ fn main() {
             // send the task to the worker
             // if it doesn't works (worker is dead for instance), then we retry
             // the recursion is done if there is no worker anymore or if the retry is to damn high
-            dbg!(&task);
-            // socket.send_multipart(&vec![worker_name.as_bytes(), task.payload.as_bytes()], zmq::DONTWAIT);
-            socket.send(&worker_name, zmq::SNDMORE | zmq::DONTWAIT).expect("send should work 1");
-            socket.send("", zmq::SNDMORE | zmq::DONTWAIT).expect("send should work 2"); // TODO: this could be removed!
-            socket.send(&task.payload, zmq::DONTWAIT).expect("send should work 3");
-            // TODO: const sent = send(sock, [worker.name, '', task.payload])
-            // TODO: if (!sent) return sendTask(sock, task)
+            let sent = socket.send(&worker_name, zmq::SNDMORE | zmq::DONTWAIT)
+                .and_then(|_| socket.send("", zmq::SNDMORE | zmq::DONTWAIT))
+                .and_then(|_| socket.send(&task.payload, zmq::DONTWAIT));
+            task.sent = sent.is_ok();
+
+            task
         };
 
         if message.get_more() {
@@ -165,8 +181,17 @@ fn main() {
                 add_client(true);
             } else {
                 add_client(false);
-                let task = Task::new(&topic, &response_topic, &payload);
-                send_task(task, &topics, &clients);
+                let mut task = Task::new(&topic, &response_topic, &payload);
+                loop {
+                    task = send_task(task, &topics, &clients);
+                    if !task.sent {
+                        dbg!(&task);
+                        let worker_name = task.worker_name.as_ref().unwrap();
+                        // FIXME: remove_worker(&worker_name);
+                    } else {
+                        break;
+                    }
+                }
                 // TODO: add task to vec
             }
             // TODO: handle worker response
