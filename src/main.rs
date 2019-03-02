@@ -20,7 +20,7 @@ impl Client {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Topic {
     name: String,
     workers: Vec<String>,
@@ -82,7 +82,6 @@ impl Broker {
     fn get_next_worker_name(&self, topic_name: &str) -> String {
         // TODO: round robin
         let topic = self.topics.get(topic_name).unwrap();
-        dbg!(&topic.workers);
         let worker = self.clients.get(topic.workers.get(0).unwrap()).unwrap();
 
         worker.name.clone()
@@ -108,7 +107,7 @@ impl Broker {
         }
     }
 
-    fn send_task(&self, mut socket: &zmq::Socket, mut task: Task) -> Task {
+    fn send_task(&self, socket: &zmq::Socket, mut task: Task) -> Task {
         task.date = SystemTime::now();
         task.retry += 1;
 
@@ -131,6 +130,40 @@ impl Broker {
         task.sent = sent.is_ok();
 
         task
+    }
+
+    fn send_response(&mut self, socket: &zmq::Socket, topic: &str, payload: &str) {
+        let topic = self.topics.get(topic);
+        if topic.is_none() {
+            return;
+        };
+        let topic = topic.unwrap().clone();
+
+        topic.clients.iter().for_each(|name| {
+            socket
+                .send(&name, zmq::SNDMORE | zmq::DONTWAIT)
+                .and_then(|_| socket.send("", zmq::SNDMORE | zmq::DONTWAIT))
+                .and_then(|_| socket.send(payload, zmq::DONTWAIT));
+
+            self.clients.entry(name.to_string()).and_modify(|client| {
+                let position = client.topics.iter().position(|name| name == &topic.name);
+                client.topics.remove(position.unwrap());
+            });
+
+            // TODO:
+            // if (client.topics.size === 0) {
+            // //   removeClient(client.name);
+            // }
+        });
+        //   topic.clients.clear();
+
+        //   if (topic.workers.size === 0) topics.delete(topic.name);
+
+        //   const tasksToRemoved: Task[] = []
+        //   tasks.forEach((task) => {
+        //     if (task.responseTopic === type) tasksToRemoved.push(task)
+        //   })
+        //   tasksToRemoved.forEach(removeTask)
     }
 
     fn remove_worker_from_topics(&mut self, worker: &Client) {
@@ -201,24 +234,29 @@ fn main() {
         } else {
             index = 0;
 
+            dbg!(&response_topic);
             if topic.as_str() == "@@REGISTER" {
                 broker.add_client(true, &identity, &response_topic);
+            } else if response_topic.len() == 0 {
+                // worker response
+                // TODO: find an other way, because a client may want to trigger an async action without waiting for acknowledgment
+                broker.send_response(&socket, &topic, &payload);
+                dbg!(&topic);
             } else {
+                // client ask for something
                 broker.add_client(false, &identity, &response_topic);
                 let mut task = Task::new(&topic, &response_topic, &payload);
                 loop {
                     task = broker.send_task(&socket, task);
                     if !task.sent {
-                        dbg!(&task);
                         let worker_name = task.worker_name.as_ref().unwrap();
                         broker.remove_worker(&worker_name);
                     } else {
                         break;
                     }
                 }
-                // TODO: add task to vec
+                broker.tasks.push(task);
             }
-            // TODO: handle worker response
 
             broker.print_debug();
         }
