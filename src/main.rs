@@ -24,7 +24,7 @@ impl Client {
 struct Topic {
     name: String,
     workers: Vec<String>,
-    // workers_iterator: Option<Iter<'a, String>>,
+    next_worker_index: usize,
     clients: Vec<String>,
 }
 
@@ -33,7 +33,7 @@ impl Topic {
         Topic {
             name: name.to_string(),
             workers: vec![],
-            // workers_iterator: None,
+            next_worker_index: 0,
             clients: vec![],
         }
     }
@@ -79,12 +79,19 @@ impl Broker {
         }
     }
 
-    fn get_next_worker_name(&self, topic_name: &str) -> String {
+    fn get_next_worker_name(&mut self, topic_name: &str) -> String {
         // TODO: round robin
-        let topic = self.topics.get(topic_name).unwrap();
-        let worker = self.clients.get(topic.workers.get(0).unwrap()).unwrap();
-
-        worker.name.clone()
+        let topic = self.topics.get_mut(topic_name).unwrap();
+        match topic.workers.get_mut(topic.next_worker_index) {
+            Some(worker_name) => {
+                topic.next_worker_index += 1;
+                worker_name.clone()
+            }
+            None => {
+                topic.next_worker_index = 1;
+                topic.workers.get(0).unwrap().clone()
+            }
+        }
     }
 
     fn add_client(&mut self, is_worker: bool, identity: &str, response_topic: &str) {
@@ -107,7 +114,7 @@ impl Broker {
         }
     }
 
-    fn send_task(&self, socket: &zmq::Socket, mut task: Task) -> Task {
+    fn send_task(&mut self, socket: &zmq::Socket, mut task: Task) -> Task {
         task.date = SystemTime::now();
         task.retry += 1;
 
