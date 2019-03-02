@@ -132,8 +132,8 @@ impl Broker {
         task
     }
 
-    fn send_response(&mut self, socket: &zmq::Socket, topic: &str, payload: &str) {
-        let topic = self.topics.get(topic);
+    fn send_response(&mut self, socket: &zmq::Socket, topic_name: &str, payload: &str) {
+        let topic = self.topics.get(topic_name);
         if topic.is_none() {
             return;
         };
@@ -145,25 +145,28 @@ impl Broker {
                 .and_then(|_| socket.send("", zmq::SNDMORE | zmq::DONTWAIT))
                 .and_then(|_| socket.send(payload, zmq::DONTWAIT));
 
+            let mut clients_to_remove = vec![];
             self.clients.entry(name.to_string()).and_modify(|client| {
                 let position = client.topics.iter().position(|name| name == &topic.name);
                 client.topics.remove(position.unwrap());
+                if client.topics.is_empty() {
+                    clients_to_remove.push(client.name.clone());
+                }
             });
 
-            // TODO:
-            // if (client.topics.size === 0) {
-            // //   removeClient(client.name);
-            // }
+            clients_to_remove.iter().for_each(|name| {
+                self.clients.remove(name);
+            });
         });
-        //   topic.clients.clear();
 
-        //   if (topic.workers.size === 0) topics.delete(topic.name);
+        let topic = self.topics.get_mut(topic_name).unwrap();
+        topic.clients.clear();
 
-        //   const tasksToRemoved: Task[] = []
-        //   tasks.forEach((task) => {
-        //     if (task.responseTopic === type) tasksToRemoved.push(task)
-        //   })
-        //   tasksToRemoved.forEach(removeTask)
+        if topic.workers.is_empty() {
+            self.topics.remove(topic_name);
+        }
+
+        self.tasks.retain(|task| task.response_topic != topic_name);
     }
 
     fn remove_worker_from_topics(&mut self, worker: &Client) {
@@ -234,14 +237,12 @@ fn main() {
         } else {
             index = 0;
 
-            dbg!(&response_topic);
             if topic.as_str() == "@@REGISTER" {
                 broker.add_client(true, &identity, &response_topic);
             } else if response_topic.len() == 0 {
                 // worker response
                 // TODO: find an other way, because a client may want to trigger an async action without waiting for acknowledgment
                 broker.send_response(&socket, &topic, &payload);
-                dbg!(&topic);
             } else {
                 // client ask for something
                 broker.add_client(false, &identity, &response_topic);
