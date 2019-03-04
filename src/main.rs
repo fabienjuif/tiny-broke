@@ -39,7 +39,7 @@ impl Topic {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Task {
     worker_topic: String,
     worker_name: Option<String>,
@@ -79,17 +79,21 @@ impl Broker {
         }
     }
 
-    fn get_next_worker_name(&mut self, topic_name: &str) -> String {
-        // TODO: round robin
-        let topic = self.topics.get_mut(topic_name).unwrap();
+    fn get_next_worker_name(&mut self, topic_name: &str) -> Option<String> {
+        let topic = self.topics.get_mut(topic_name);
+        if topic.is_none() {
+            return None;
+        }
+        let topic = topic.unwrap();
+
         match topic.workers.get_mut(topic.next_worker_index) {
             Some(worker_name) => {
                 topic.next_worker_index += 1;
-                worker_name.clone()
+                Some(worker_name.clone())
             }
             None => {
                 topic.next_worker_index = 1;
-                topic.workers.get(0).unwrap().clone()
+                topic.workers.get(0).map(|name| name.to_string())
             }
         }
     }
@@ -114,18 +118,16 @@ impl Broker {
         }
     }
 
-    fn send_task(&mut self, socket: &zmq::Socket, mut task: Task) -> Task {
+    fn send_task(&mut self, socket: &zmq::Socket, mut task: &mut Task) -> Option<String> {
         task.date = SystemTime::now();
         task.retry += 1;
 
-        if task.retry >= 3 {
-            // TODO: make it a const
-            panic!("Max retry!");
-        }
-
         // select a worker
-        let worker_name = self.get_next_worker_name(&task.worker_topic);
-        task.worker_name = Some(worker_name.clone());
+        task.worker_name = self.get_next_worker_name(&task.worker_topic);
+        if task.worker_name.is_none() {
+            return None;
+        }
+        let worker_name = task.worker_name.clone().unwrap();
 
         // send the task to the worker
         // if it doesn't works (worker is dead for instance), then we retry
@@ -136,7 +138,31 @@ impl Broker {
             .and_then(|_| socket.send(&task.payload, zmq::DONTWAIT));
         task.sent = sent.is_ok();
 
-        task
+        if !task.sent {
+            self.remove_worker(&worker_name);
+        }
+
+        Some(worker_name)
+    }
+
+    fn send_task_and_retry(&mut self, socket: &zmq::Socket, mut task: Task) {
+        loop {
+            match self.send_task(&socket, &mut task) {
+                Some(_) => {
+                    if task.sent {
+                        break;
+                    }
+                }
+                None => {
+                    println!(
+                        "Can't find a worker at the moment, storing task {}",
+                        task.worker_topic
+                    );
+                    self.tasks.push(task);
+                    break;
+                }
+            }
+        }
     }
 
     fn send_response(&mut self, socket: &zmq::Socket, topic_name: &str, payload: &str) {
@@ -190,6 +216,15 @@ impl Broker {
         let worker = worker.clone(); // FIXME:
         self.remove_worker_from_topics(&worker);
         self.clients.remove(worker_name);
+    }
+
+    fn retry_tasks(&mut self, socket: &zmq::Socket) {
+        let tasks_to_retry: Vec<_> = self.tasks.clone();
+        self.tasks.clear();
+
+        for task in tasks_to_retry {
+            self.send_task_and_retry(&socket, task);
+        }
     }
 
     // TODO: should be accessible from a dedicated socket and only when the client ask for it
@@ -246,6 +281,9 @@ fn main() {
 
             if topic.as_str() == "@@REGISTER" {
                 broker.add_client(true, &identity, &response_topic);
+
+                // new worker, we can retry tasks
+                broker.retry_tasks(&socket);
             } else if response_topic.len() == 0 {
                 // worker response
                 // TODO: find an other way, because a client may want to trigger an async action without waiting for acknowledgment
@@ -253,17 +291,7 @@ fn main() {
             } else {
                 // client ask for something
                 broker.add_client(false, &identity, &response_topic);
-                let mut task = Task::new(&topic, &response_topic, &payload);
-                loop {
-                    task = broker.send_task(&socket, task);
-                    if !task.sent {
-                        let worker_name = task.worker_name.as_ref().unwrap();
-                        broker.remove_worker(&worker_name);
-                    } else {
-                        break;
-                    }
-                }
-                broker.tasks.push(task);
+                broker.send_task_and_retry(&socket, Task::new(&topic, &response_topic, &payload));
             }
 
             broker.print_debug();
