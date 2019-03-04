@@ -68,6 +68,7 @@ struct Broker {
     clients: HashMap<String, Client>,
     topics: HashMap<String, Topic>,
     tasks: Vec<Task>,
+    tasks_to_retry: Vec<Task>,
 }
 
 impl Broker {
@@ -75,6 +76,7 @@ impl Broker {
         Broker {
             clients: HashMap::new(),
             topics: HashMap::new(),
+            tasks_to_retry: Vec::new(),
             tasks: Vec::new(),
         }
     }
@@ -150,6 +152,7 @@ impl Broker {
             match self.send_task(&socket, &mut task) {
                 Some(_) => {
                     if task.sent {
+                        self.tasks.push(task);
                         break;
                     }
                 }
@@ -158,7 +161,7 @@ impl Broker {
                         "Can't find a worker at the moment, storing task {}",
                         task.worker_topic
                     );
-                    self.tasks.push(task);
+                    self.tasks_to_retry.push(task);
                     break;
                 }
             }
@@ -219,12 +222,45 @@ impl Broker {
     }
 
     fn retry_tasks(&mut self, socket: &zmq::Socket) {
-        let tasks_to_retry: Vec<_> = self.tasks.clone();
-        self.tasks.clear();
+        let tasks_to_retry: Vec<_> = self.tasks_to_retry.clone();
+        self.tasks_to_retry.clear();
 
         for task in tasks_to_retry {
             self.send_task_and_retry(&socket, task);
         }
+    }
+
+    fn remove_timeout_tasks(&mut self) {
+        let mut tasks = vec![];
+
+        for task in self.tasks.clone() {
+            if task.date.elapsed().unwrap().as_secs() < 2 {
+                tasks.push(task);
+            } else {
+                self.topics.remove(&task.response_topic);
+                let mut clients_to_remove = vec![];
+                self.clients.iter_mut().for_each(|(_, client)| {
+                    match client
+                        .topics
+                        .iter()
+                        .position(|name| name == &task.response_topic)
+                    {
+                        None => {}
+                        Some(position) => {
+                            client.topics.remove(position);
+                        }
+                    }
+                    if client.topics.is_empty() {
+                        clients_to_remove.push(client.name.clone());
+                    }
+                });
+                clients_to_remove.iter().for_each(|name| {
+                    self.clients.remove(name);
+                });
+            }
+        }
+
+        self.tasks = tasks;
     }
 
     // TODO: should be accessible from a dedicated socket and only when the client ask for it
@@ -234,11 +270,12 @@ impl Broker {
             self.clients.values().partition(|&client| client.is_worker);
 
         println!(
-            "[{} workers; {} clients; {} topics; {} tasks]",
+            "[{} workers; {} clients; {} topics; {} tasks, {} waiting]",
             &workers.len(),
             &clients.len(),
             &self.topics.len(),
-            &self.tasks.len()
+            &self.tasks.len(),
+            &self.tasks_to_retry.len(),
         );
     }
 }
@@ -293,6 +330,8 @@ fn main() {
                 broker.add_client(false, &identity, &response_topic);
                 broker.send_task_and_retry(&socket, Task::new(&topic, &response_topic, &payload));
             }
+
+            broker.remove_timeout_tasks();
 
             broker.print_debug();
         }
