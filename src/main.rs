@@ -316,7 +316,20 @@ fn main() {
         } else {
             index = 0;
 
-            if topic.as_str() == "@@REGISTER" {
+            if topic.as_str() == "@@PING" {
+                // if identity is unknown, ask for reconnexion
+                // it happens when the broker is down and reconnect in between 2 worker pings
+                if broker.clients.get(&identity).is_none() {
+                    socket
+                        .send(&identity, zmq::SNDMORE | zmq::DONTWAIT)
+                        .and_then(|_| socket.send("", zmq::SNDMORE | zmq::DONTWAIT))
+                        .and_then(|_| socket.send("@@REGISTER", zmq::DONTWAIT));
+                }
+                socket
+                    .send(&identity, zmq::SNDMORE | zmq::DONTWAIT)
+                    .and_then(|_| socket.send("", zmq::SNDMORE | zmq::DONTWAIT))
+                    .and_then(|_| socket.send("@@PONG", zmq::DONTWAIT));
+            } else if topic.as_str() == "@@REGISTER" {
                 broker.add_client(true, &identity, &response_topic);
 
                 // new worker, we can retry tasks
