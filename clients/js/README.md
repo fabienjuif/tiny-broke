@@ -1,5 +1,7 @@
 # @tiny-broke/client
 
+Javascript client for [tiny-broke](https://github.com/fabienjuif/tiny-broke).
+
 ## Service
 ```js
 import connect from '@tiny-broke/client'

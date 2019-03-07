@@ -1,17 +1,34 @@
 {
   "name": "@tiny-broke/client",
-  "version": "1.0.0",
+  "version": "0.1.0",
+  "license": "MIT",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "license": "MIT",
+  "repository": "https://github.com/fabienjuif/tiny-broke",
+  "homepage": "https://github.com/fabienjuif/tiny-broke",
+  "keywords": [
+    "broker",
+    "tiny",
+    "tiny-broke",
+    "async",
+    "messages",
+    "event",
+    "rpc",
+    "worker",
+    "zmq",
+    "zeromq"
+  ],
   "scripts": {
-    "build": "tsc",
-    "start": "node ."
+    "build": "tsc"
   },
   "dependencies": {
     "zeromq": "^5.1.0"
   },
   "devDependencies": {
     "@types/node": "^11.9.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }
