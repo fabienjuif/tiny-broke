@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::slice::Iter;
+use std::env;
 use std::time::SystemTime;
 use zmq::{self, SocketType};
 
@@ -65,6 +65,7 @@ impl Task {
 }
 
 struct Broker {
+    timeout_as_secs: u64,
     clients: HashMap<String, Client>,
     topics: HashMap<String, Topic>,
     tasks: Vec<Task>,
@@ -74,6 +75,9 @@ struct Broker {
 impl Broker {
     fn new() -> Broker {
         Broker {
+            timeout_as_secs: env::var("TASK_TIMEOUT")
+                .map(|v| v.parse::<u64>().unwrap_or(60))
+                .unwrap_or(60),
             clients: HashMap::new(),
             topics: HashMap::new(),
             tasks_to_retry: Vec::new(),
@@ -82,11 +86,7 @@ impl Broker {
     }
 
     fn get_next_worker_name(&mut self, topic_name: &str) -> Option<String> {
-        let topic = self.topics.get_mut(topic_name);
-        if topic.is_none() {
-            return None;
-        }
-        let topic = topic.unwrap();
+        let topic = self.topics.get_mut(topic_name)?;
 
         match topic.workers.get_mut(topic.next_worker_index) {
             Some(worker_name) => {
@@ -105,14 +105,14 @@ impl Broker {
         let client = self
             .clients
             .entry(identity.to_string())
-            .or_insert(Client::new(&identity, is_worker));
+            .or_insert_with(|| Client::new(&identity, is_worker));
         client.topics.push(response_topic.to_string());
 
         // add topic
         let topic = self
             .topics
             .entry(response_topic.to_string())
-            .or_insert(Topic::new(&response_topic));
+            .or_insert_with(|| Topic::new(&response_topic));
         if is_worker {
             topic.workers.push(identity.to_string());
         } else {
@@ -126,10 +126,7 @@ impl Broker {
 
         // select a worker
         task.worker_name = self.get_next_worker_name(&task.worker_topic);
-        if task.worker_name.is_none() {
-            return None;
-        }
-        let worker_name = task.worker_name.clone().unwrap();
+        let worker_name = task.worker_name.clone()?;
 
         // send the task to the worker
         // if it doesn't works (worker is dead for instance), then we retry
@@ -179,7 +176,8 @@ impl Broker {
             socket
                 .send(&name, zmq::SNDMORE | zmq::DONTWAIT)
                 .and_then(|_| socket.send("", zmq::SNDMORE | zmq::DONTWAIT))
-                .and_then(|_| socket.send(payload, zmq::DONTWAIT));
+                .and_then(|_| socket.send(payload, zmq::DONTWAIT))
+                .ok();
 
             let mut clients_to_remove = vec![];
             self.clients.entry(name.to_string()).and_modify(|client| {
@@ -215,8 +213,7 @@ impl Broker {
     }
 
     fn remove_worker(&mut self, worker_name: &str) {
-        let worker = self.clients.get(worker_name).unwrap();
-        let worker = worker.clone(); // FIXME:
+        let worker = self.clients[worker_name].clone(); // FIXME: clone
         self.remove_worker_from_topics(&worker);
         self.clients.remove(worker_name);
     }
@@ -234,7 +231,7 @@ impl Broker {
         let mut tasks = vec![];
 
         for task in self.tasks.clone() {
-            if task.date.elapsed().unwrap().as_secs() < 2 {
+            if task.date.elapsed().unwrap().as_secs() < self.timeout_as_secs {
                 tasks.push(task);
             } else {
                 self.topics.remove(&task.response_topic);
@@ -319,22 +316,24 @@ fn main() {
             if topic.as_str() == "@@PING" {
                 // if identity is unknown, ask for reconnexion
                 // it happens when the broker is down and reconnect in between 2 worker pings
-                if broker.clients.get(&identity).is_none() {
+                if identity.starts_with("worker") && broker.clients.get(&identity).is_none() {
                     socket
                         .send(&identity, zmq::SNDMORE | zmq::DONTWAIT)
                         .and_then(|_| socket.send("", zmq::SNDMORE | zmq::DONTWAIT))
-                        .and_then(|_| socket.send("@@REGISTER", zmq::DONTWAIT));
+                        .and_then(|_| socket.send("@@REGISTER", zmq::DONTWAIT))
+                        .ok();
                 }
                 socket
                     .send(&identity, zmq::SNDMORE | zmq::DONTWAIT)
                     .and_then(|_| socket.send("", zmq::SNDMORE | zmq::DONTWAIT))
-                    .and_then(|_| socket.send("@@PONG", zmq::DONTWAIT));
+                    .and_then(|_| socket.send("@@PONG", zmq::DONTWAIT))
+                    .ok();
             } else if topic.as_str() == "@@REGISTER" {
                 broker.add_client(true, &identity, &response_topic);
 
                 // new worker, we can retry tasks
                 broker.retry_tasks(&socket);
-            } else if response_topic.len() == 0 {
+            } else if response_topic.is_empty() {
                 // worker response
                 // TODO: find an other way, because a client may want to trigger an async action without waiting for acknowledgment
                 broker.send_response(&socket, &topic, &payload);
@@ -346,7 +345,9 @@ fn main() {
 
             broker.remove_timeout_tasks();
 
-            broker.print_debug();
+            if topic.as_str() != "@@PING" {
+                broker.print_debug();
+            }
         }
     }
 }
