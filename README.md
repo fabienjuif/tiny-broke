@@ -1,5 +1,5 @@
 # tiny-broke
-This RPC like application, the client ask for something, then register to a topic, waiting for response.
+This is RPC like broker, the client ask for something, then register to a topic, waiting for response.
 
 The worker register to some topics, and send back an event when its work is done, so the client can complete its own task.
 
@@ -30,6 +30,7 @@ You have to use environment variables to configure tiny-broke:
 - Retry timeout tasks (these are tasks that are send to a worker)
 - Break the SPOF (by allowing multiple tiny-broke to speak together?)
 - Client should be able to send a task and never wait a response (no returns type)
+- SSL support (?)
 
 ## Not in near future
 - Persisting tasks (disk, db, whatever)
