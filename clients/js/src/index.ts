@@ -28,7 +28,7 @@ const create = (name = '', uri: string, isWorker = false) => {
     if (!isWorker) return
 
     registrations.forEach((_, type) => {
-      sock.send(['@@REGISTER', type])
+      sock.send(['@@REGISTER', `@@ASKED>${type}`])
     })
   }
 
