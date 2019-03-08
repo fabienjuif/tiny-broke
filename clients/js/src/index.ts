@@ -98,7 +98,7 @@ const create = (name = '', uri: string, isWorker = false) => {
     timerPong = setTimeout(
       () => {
         if (!pongRecieved) {
-          console.log('Trying to reconnect...')
+          console.log(`[${sock.identity}] trying to reconnect...`)
           start()
         }
       },
@@ -128,11 +128,11 @@ const create = (name = '', uri: string, isWorker = false) => {
       },
     )
 
-    if (isWorker) sock.send(['@@REGISTER', type])
+    if (isWorker) sock.send(['@@REGISTER', `@@ASKED>${type}`])
   }
 
   const wait = (action: { type: string, returnsType: string }) => {
-    sock.send([action.type, action.returnsType, JSON.stringify(action)])
+    sock.send([`@@ASKED>${action.type}`, action.returnsType, JSON.stringify(action)])
 
     return new Promise((resolve, reject) => {
       register(
@@ -149,11 +149,19 @@ const create = (name = '', uri: string, isWorker = false) => {
     })
   }
 
+  const close = () => {
+    if (timerPing) clearTimeout(timerPing)
+    if (timerPong) clearTimeout(timerPong)
+
+    sock.close()
+  }
+
   start()
 
   return {
     register,
     wait,
+    close,
   }
 }
 
