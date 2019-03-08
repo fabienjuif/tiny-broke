@@ -1,4 +1,6 @@
 const zmq = require('zeromq')
+const serializeError = require('serialize-error')
+const deserializeError = require('deserialize-error')
 
 interface ZMQSocket {
   identity: string,
@@ -69,8 +71,8 @@ const create = (name = '', uri: string, isWorker = false) => {
         if (log) log(action)
         payload = await callback(action)
       } catch (ex) {
-        console.error(`error while responding to ${action.type}`, ex.message)
-        error = ex
+        console.error(`error while responding to ${action.type}`, ex)
+        error = serializeError(ex)
       }
 
       // send reponse to broker
@@ -140,9 +142,10 @@ const create = (name = '', uri: string, isWorker = false) => {
         ({ payload, error, from }) => {
           if (!error) return resolve(payload)
 
-          console.error(error)
-          const thrownError: any = new Error(error)
+          const thrownError = deserializeError(error)
           thrownError.from = from
+          console.error(thrownError)
+
           return reject(thrownError)
         },
       )

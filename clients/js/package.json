@@ -22,6 +22,8 @@
     "build": "tsc"
   },
   "dependencies": {
+    "deserialize-error": "^0.0.3",
+    "serialize-error": "^3.0.0",
     "zeromq": "^5.1.0"
   },
   "devDependencies": {
