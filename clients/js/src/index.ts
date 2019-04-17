@@ -1,6 +1,7 @@
 const zmq = require('zeromq')
 const serializeError = require('serialize-error')
 const deserializeError = require('deserialize-error')
+const uuid = require('uuid/v4')
 
 interface ZMQSocket {
   identity: string,
@@ -134,11 +135,12 @@ const create = (name = '', uri: string, isWorker = false) => {
   }
 
   const wait = (action: { type: string, returnsType: string }) => {
-    sock.send([`@@ASKED>${action.type}`, action.returnsType, JSON.stringify(action)])
+    const wrappedReturnsType = `${action.returnsType}@@${uuid()}`
+    sock.send([`@@ASKED>${action.type}`, wrappedReturnsType, JSON.stringify({ ...action, returnsType: wrappedReturnsType })])
 
     return new Promise((resolve, reject) => {
       register(
-        action.returnsType,
+        wrappedReturnsType,
         ({ payload, error, from }) => {
           if (!error) return resolve(payload)
 

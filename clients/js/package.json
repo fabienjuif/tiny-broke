@@ -24,10 +24,12 @@
   "dependencies": {
     "deserialize-error": "^0.0.3",
     "serialize-error": "^3.0.0",
+    "uuid": "^3.3.2",
     "zeromq": "^5.1.0"
   },
   "devDependencies": {
-    "@types/node": "^11.9.3"
+    "@types/node": "^11.9.3",
+    "typescript": "^3.4.3"
   },
   "publishConfig": {
     "access": "public",
