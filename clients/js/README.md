@@ -44,7 +44,7 @@ const broke = connect(
 )
 
 // event factory helper
-const getInvoice: id => ({
+const getInvoice = id => ({
   type: 'INVOICES>GET', // event type, must match a register from a service
   returnsType: `INVOICES>GET>${id}`, // this type is used to tells tiny-broke that we are waiting this response to complete
   payload: id, // whatever you want in payload, here the invoice id

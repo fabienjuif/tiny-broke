@@ -1,0 +1,20 @@
+[package]
+name = "tiny-broke-client"
+description = "Client for tiny-broke. tiny-broke is an async messages broker based on øMQ, rpc-like"
+version = "0.1.0"
+authors = ["Fabien JUIF <fabien.juif@gmail.com>"]
+edition = "2018"
+license = "MIT"
+keywords = ["broker", "rpc", "worker", "messages", "zeromq"]
+homepage = "https://github.com/fabienjuif/tiny-broke"
+repository = "https://github.com/fabienjuif/tiny-broke"
+readme = "README.md"
+
+[dependencies]
+zmq = "0.9"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "0.7", features = ["serde", "v4"] }
+
+[profile.release]
+lto=true
